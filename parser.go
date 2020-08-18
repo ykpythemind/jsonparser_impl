@@ -13,14 +13,13 @@ type ErrorCurrentRuneInvalid struct {
 }
 
 func (e ErrorCurrentRuneInvalid) Error() string {
-	return fmt.Sprintf("at %d, current %s", e.parser.at, e.parser.r)
+	return fmt.Sprintf("at %d, current %+v", e.parser.at, e.parser.r)
 }
 
 type Parser struct {
-	input  []rune
-	at     int   // 現在の文字のインデックス
-	r      *rune // 現在の文字
-	result interface{}
+	input []rune
+	at    int   // 現在の文字のインデックス
+	r     *rune // 現在の文字
 }
 
 func NewParser(reader io.Reader) (*Parser, error) {
@@ -39,20 +38,31 @@ func NewParser(reader io.Reader) (*Parser, error) {
 }
 
 func (p *Parser) Parse() (interface{}, error) {
+	result, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
 
-	return p.result, nil
+	// p.skipSpace()
+	// if p.r != nil {
+	// 	return nil, errors.New("syntax err")
+	// }
+
+	return result, nil
 }
 
 func (p *Parser) next() *rune {
 	// 次の文字を取得する。もしそれ以上文字がなかったら空runeを返す
-	if len(p.input) < p.at+1 {
+	if len(p.input)-1 <= p.at+1 { //あやしい
 		return nil
 	}
 
-	r := p.input[p.at]
+	fmt.Printf("%+v\n", p)
+	r := p.input[p.at+1]
+	fmt.Printf("rune %s\n", string(r))
 
-	p.r = &r
 	p.at++
+	p.r = &r
 	return &r
 }
 
@@ -78,16 +88,61 @@ func (p *Parser) skipSpace() {
 	}
 }
 
-func (p *Parser) parseString() string {
-	return ""
+func (p *Parser) parseString() (string, error) {
+	var runes []rune
+
+	if *p.r == '"' {
+		for {
+			n := p.next()
+			if n == nil {
+				break
+			}
+			if *n == '"' {
+				p.next()
+				// 文字列リテラル終了
+				return string(runes), nil
+			}
+			if *n == '\\' {
+				// unicode escape
+				return "", errors.New("not implemented")
+			}
+
+			runes = append(runes, *n)
+		}
+	}
+
+	return "", errors.New("bad string")
 }
 
-func (p *Parser) parseValue() interface{} {
-	return nil
+// 値を解析する. オブジェクトか配列、文字列、数値、もしくは単語
+func (p *Parser) parseValue() (interface{}, error) {
+	p.skipSpace()
+
+	// - これ要チェック
+	if p.r == nil && p.at == 0 && len(p.input) != 0 {
+		p.next()
+	}
+
+	if p.r == nil {
+		return nil, errors.New("aaaaaa")
+	}
+
+	// fmt.Printf("%+v\n", p)
+
+	switch *p.r {
+	case '{':
+		return p.parseObject()
+	case '"':
+		return p.parseString()
+	case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0':
+		return nil, errors.New("number is not implemented")
+	default:
+		return nil, errors.New("word, is not implemented")
+	}
 }
 
 func (p *Parser) parseObject() (map[interface{}]interface{}, error) {
-	var object map[interface{}]interface{}
+	object := make(map[interface{}]interface{})
 	var key string
 
 	if *p.r == '{' {
@@ -104,14 +159,21 @@ func (p *Parser) parseObject() (map[interface{}]interface{}, error) {
 			return object, nil // 空のobject
 		}
 
-		for p.r != nil {
-			key = p.parseString()
-			p.skipSpace()
-			_, err := p.checkCurrentAndNext(':')
+		for {
+			fmt.Printf("-------- %+v\n", p)
+			key, err = p.parseString()
 			if err != nil {
 				return nil, err
 			}
-			object[key] = p.parseValue() // 再帰的にvalueを探索
+			p.skipSpace()
+			_, err = p.checkCurrentAndNext(':')
+			if err != nil {
+				return nil, err
+			}
+			object[key], err = p.parseValue() // 再帰的にvalueを探索
+			if err != nil {
+				return nil, err
+			}
 			p.skipSpace()
 			if *p.r == '}' {
 				_, err := p.checkCurrentAndNext('}')
@@ -127,6 +189,10 @@ func (p *Parser) parseObject() (map[interface{}]interface{}, error) {
 				return nil, err
 			}
 			p.skipSpace()
+
+			if p.r == nil {
+				break
+			}
 		}
 	}
 

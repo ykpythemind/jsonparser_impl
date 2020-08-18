@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -12,12 +11,16 @@ func TestParse(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			input:   `{"hoge":"fuga", "piyo": 13}`,
+			input:   `{"hoge":"fuga","piyo": "12"}`,
 			wantErr: false,
 		},
 		{
-			input:   `0}`,
+			input:   `}`,
 			wantErr: true,
+		},
+		{
+			input:   `{"f":{"p": "12"}}`,
+			wantErr: false,
 		},
 	}
 
@@ -31,10 +34,13 @@ func TestParse(t *testing.T) {
 		}
 		result, err := parser.Parse()
 		if tt.wantErr && err == nil {
-			t.Fatalf("want error but no error")
+			t.Error("want error but no error")
+			continue
 		}
-		if err == nil {
-			fmt.Printf("input %s, got %+v", tt.input, result)
+		if !tt.wantErr && err != nil {
+			t.Fatalf("unexpected error %s", err)
 		}
+
+		t.Logf("input %s, got %+v\n", tt.input, result)
 	}
 }
