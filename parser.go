@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -81,6 +82,10 @@ func (p *Parser) parseString() string {
 	return ""
 }
 
+func (p *Parser) parseValue() interface{} {
+	return nil
+}
+
 func (p *Parser) parseObject() (map[interface{}]interface{}, error) {
 	var object map[interface{}]interface{}
 	var key string
@@ -92,13 +97,38 @@ func (p *Parser) parseObject() (map[interface{}]interface{}, error) {
 		}
 		p.skipSpace()
 		if *p.r == '}' {
-			p.checkCurrentAndNext('}')
+			_, err := p.checkCurrentAndNext('}')
+			if err != nil {
+				return nil, err
+			}
 			return object, nil // 空のobject
 		}
 
 		for p.r != nil {
 			key = p.parseString()
 			p.skipSpace()
+			_, err := p.checkCurrentAndNext(':')
+			if err != nil {
+				return nil, err
+			}
+			object[key] = p.parseValue() // 再帰的にvalueを探索
+			p.skipSpace()
+			if *p.r == '}' {
+				_, err := p.checkCurrentAndNext('}')
+				if err != nil {
+					return nil, err
+				}
+				return object, nil
+			}
+
+			_, err = p.checkCurrentAndNext(',')
+			// 次の key:value の構造
+			if err != nil {
+				return nil, err
+			}
+			p.skipSpace()
 		}
 	}
+
+	return nil, errors.New("bad obj")
 }
