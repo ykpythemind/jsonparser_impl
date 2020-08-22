@@ -70,6 +70,14 @@ func TestParse(t *testing.T) {
 			input:   `{"00000"}`,
 			wantErr: true,
 		},
+		{
+			input:   `{"a": tru`,
+			wantErr: true,
+		},
+		{
+			input:   `true`,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
