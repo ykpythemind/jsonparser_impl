@@ -304,7 +304,7 @@ func (p *Parser) readIntAsRune() []rune {
 		r := *p.r
 
 		switch r {
-		case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-':
+		case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0':
 			runes = append(runes, r)
 			n := p.next()
 			if n == nil {
