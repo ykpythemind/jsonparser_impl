@@ -54,6 +54,22 @@ func TestParse(t *testing.T) {
 			input:   `{"key":null}`,
 			wantErr: false,
 		},
+		{
+			input:   `{"key":["1", 2, {"a": "b"}]}`,
+			wantErr: false,
+		},
+		{
+			input:   `[1, 2, {"a": [4, 5, 6]}]`,
+			wantErr: false,
+		},
+		{
+			input:   `{"aaaa"::"aaa"}`,
+			wantErr: true,
+		},
+		{
+			input:   `{"00000"}`,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

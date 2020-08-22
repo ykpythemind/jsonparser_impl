@@ -128,6 +128,40 @@ func (p *Parser) parseString() (string, error) {
 	return "", errors.New("bad string")
 }
 
+func (p *Parser) parseArray() ([]interface{}, error) {
+	array := make([]interface{}, 0)
+
+	if _, err := p.checkCurrentAndNext('['); err != nil {
+		return nil, err
+	}
+	p.skipSpace()
+	if *p.r == ']' {
+		p.next()
+		return array, nil // 空の配列
+	}
+
+	for {
+		val, err := p.parseValue()
+		if err != nil {
+			return nil, err
+		}
+		array = append(array, val)
+		p.skipSpace()
+
+		if *p.r == ']' {
+			p.next()
+			break
+		}
+
+		if r, err := p.checkCurrentAndNext(','); r == nil || err != nil {
+			return nil, fmt.Errorf("unexpected: %w", err)
+		}
+		p.skipSpace()
+	}
+
+	return array, nil
+}
+
 // 値を解析する. オブジェクトか配列、文字列、数値、もしくは単語
 func (p *Parser) parseValue() (interface{}, error) {
 	if p.r == nil && p.at == 0 && len(p.input) != 0 {
@@ -148,7 +182,7 @@ func (p *Parser) parseValue() (interface{}, error) {
 	case '"':
 		return p.parseString()
 	case '[':
-		return nil, errors.New("array is not implemented")
+		return p.parseArray()
 	case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-':
 		return p.parseNumber()
 	default:
