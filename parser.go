@@ -5,15 +5,24 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"strconv"
 	"unicode"
 )
 
 type ErrorCurrentRuneInvalid struct {
-	parser *Parser
+	parser   *Parser
+	expected string
 }
 
 func (e ErrorCurrentRuneInvalid) Error() string {
-	return fmt.Sprintf("at %d, current %+v", e.parser.at, e.parser.r)
+	r := e.parser.r
+	var s string
+	if r != nil {
+		s = string(*r)
+	} else {
+		s = "<nil>"
+	}
+	return fmt.Sprintf("at %d, current_rune %s, expected: %s", e.parser.at, s, e.expected)
 }
 
 type Parser struct {
@@ -38,38 +47,40 @@ func NewParser(reader io.Reader) (*Parser, error) {
 }
 
 func (p *Parser) Parse() (interface{}, error) {
+	var result interface{}
+
 	result, err := p.parseValue()
 	if err != nil {
 		return nil, err
 	}
 
-	// p.skipSpace()
-	// if p.r != nil {
-	// 	return nil, errors.New("syntax err")
-	// }
+	p.skipSpace()
+
+	if len(p.input)-1 != p.at {
+		// もう最後まで読んだはずですよね？
+		return nil, errors.New("syntax err")
+	}
 
 	return result, nil
 }
 
 func (p *Parser) next() *rune {
 	// 次の文字を取得する。もしそれ以上文字がなかったら空runeを返す
-	if len(p.input)-1 <= p.at+1 { //あやしい
+	if len(p.input) <= p.at+1 {
 		return nil
 	}
 
-	fmt.Printf("%+v\n", p)
 	r := p.input[p.at+1]
-	fmt.Printf("rune %s\n", string(r))
 
 	p.at++
 	p.r = &r
-	return &r
+	return p.r
 }
 
 // 現在の文字が引数currentであることを確認しつつインデックスをすすめる
 func (p *Parser) checkCurrentAndNext(current rune) (*rune, error) {
 	if *p.r != current {
-		return nil, ErrorCurrentRuneInvalid{p}
+		return nil, ErrorCurrentRuneInvalid{p, string(current)}
 	}
 
 	return p.next(), nil
@@ -82,6 +93,7 @@ func (p *Parser) skipSpace() {
 		}
 		if unicode.IsSpace(*p.r) {
 			p.next()
+			continue
 		} else {
 			break
 		}
@@ -93,21 +105,23 @@ func (p *Parser) parseString() (string, error) {
 
 	if *p.r == '"' {
 		for {
-			n := p.next()
-			if n == nil {
+			p.next()
+			if p.r == nil {
 				break
 			}
-			if *n == '"' {
+			if *p.r == '"' {
 				p.next()
+
 				// 文字列リテラル終了
-				return string(runes), nil
+				str := string(runes)
+				return str, nil
 			}
-			if *n == '\\' {
+			if *p.r == '\\' {
 				// unicode escape
 				return "", errors.New("not implemented")
 			}
 
-			runes = append(runes, *n)
+			runes = append(runes, *p.r)
 		}
 	}
 
@@ -116,29 +130,159 @@ func (p *Parser) parseString() (string, error) {
 
 // 値を解析する. オブジェクトか配列、文字列、数値、もしくは単語
 func (p *Parser) parseValue() (interface{}, error) {
-	p.skipSpace()
-
-	// - これ要チェック
 	if p.r == nil && p.at == 0 && len(p.input) != 0 {
+		// 1文字目
+		p.at = -1
 		p.next()
 	}
 
-	if p.r == nil {
-		return nil, errors.New("aaaaaa")
-	}
+	p.skipSpace()
 
-	// fmt.Printf("%+v\n", p)
+	if p.r == nil {
+		return nil, errors.New("something wrong")
+	}
 
 	switch *p.r {
 	case '{':
 		return p.parseObject()
 	case '"':
 		return p.parseString()
-	case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0':
-		return nil, errors.New("number is not implemented")
+	case '[':
+		return nil, errors.New("array is not implemented")
+	case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-':
+		return p.parseNumber()
 	default:
-		return nil, errors.New("word, is not implemented")
+		return p.parseWord()
 	}
+}
+
+func (p *Parser) parseWord() (interface{}, error) {
+	switch *p.r {
+	case 't':
+		if _, err := p.checkCurrentAndNext('t'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('r'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('u'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('e'); err != nil {
+			return nil, err
+		}
+		return true, nil
+	case 'f':
+		if _, err := p.checkCurrentAndNext('f'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('a'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('l'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('s'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('e'); err != nil {
+			return nil, err
+		}
+		return false, nil
+	case 'n':
+		if _, err := p.checkCurrentAndNext('n'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('u'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('l'); err != nil {
+			return nil, err
+		}
+		if _, err := p.checkCurrentAndNext('l'); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	default:
+		return nil, errors.New("bad word")
+	}
+}
+
+func (p *Parser) parseNumber() (interface{}, error) {
+	runes := []rune{}
+	negative := false
+	float := false
+
+	if p.r == nil {
+		return 0, errors.New("something wrong")
+	}
+
+	if *p.r == '-' {
+		negative = true
+		p.next()
+	}
+
+	runes = append(runes, p.readIntAsRune()...)
+
+	if *p.r == '.' {
+		float = true
+		p.next()
+		runes = append(runes, '.')
+		runes = append(runes, p.readIntAsRune()...)
+	}
+
+	if *p.r == 'e' || *p.r == 'E' {
+		return nil, errors.New("not implemented")
+	}
+
+	var result interface{}
+	if float {
+		fl, err := strconv.ParseFloat(string(runes), 64)
+		if err != nil {
+			return nil, err
+		}
+
+		if negative {
+			fl = -1 * fl
+		}
+
+		result = fl
+	} else {
+		i, err := strconv.ParseInt(string(runes), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		if negative {
+			i = -1 * i
+		}
+
+		result = i
+	}
+
+	return result, nil
+}
+
+func (p *Parser) readIntAsRune() []rune {
+	var runes []rune
+
+	for {
+		r := *p.r
+
+		switch r {
+		case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-':
+			runes = append(runes, r)
+			n := p.next()
+			if n == nil {
+				goto end
+			}
+		default:
+			goto end
+		}
+	}
+
+end:
+	return runes
 }
 
 func (p *Parser) parseObject() (map[interface{}]interface{}, error) {
@@ -160,7 +304,6 @@ func (p *Parser) parseObject() (map[interface{}]interface{}, error) {
 		}
 
 		for {
-			fmt.Printf("-------- %+v\n", p)
 			key, err = p.parseString()
 			if err != nil {
 				return nil, err
